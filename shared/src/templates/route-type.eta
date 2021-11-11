@@ -1,0 +1,50 @@
+<%
+const { route, utils, config } = it;
+const { _, formatDescription, fmtToJSDocLine, classNameCase, require } = utils;
+const { raw, request, routeName } = route;
+const { query, payload, pathParams, headers } = request;
+
+const getRouteDocs = () => {
+  const jsDocDescription = raw.description ?
+    ` * @description ${formatDescription(raw.description, true)}` :
+    fmtToJSDocLine('No description', { eol: false });
+  const jsDocLines = _.compact([
+    _.size(raw.tags) && ` * @tags ${raw.tags.join(", ")}`,
+    ` * @name ${classNameCase(routeName.usage)}`,
+    raw.summary && ` * @summary ${raw.summary}`,
+    ` * @request ${_.upperCase(request.method)}:${raw.route}`,
+    routeName.duplicate && ` * @originalName ${routeName.original}`,
+    routeName.duplicate && ` * @duplicate`,
+    request.security && ` * @secure`,
+    ...(config.generateResponses && raw.responsesTypes.length
+    ? raw.responsesTypes.map(
+        ({ type, status, description, isSuccess }) =>
+            ` * @response \`${status}\` \`${type}\` ${description}`,
+        )
+    : []),
+  ]).join("\n");
+
+  return {
+    description: jsDocDescription,
+    lines: jsDocLines,
+  }
+}
+
+const routeDocs = getRouteDocs();
+
+const routeNamespace = classNameCase(route.routeName.usage);
+
+%>
+/**
+<%~ routeDocs.description %>
+
+<%~ routeDocs.lines %>
+
+*/
+export namespace <%~ routeNamespace %> {
+  export type RequestParams = <%~ (pathParams && pathParams.type) || '{}' %>;
+  export type RequestQuery = <%~ (query && query.type) || '{}' %>;
+  export type RequestBody = <%~ (payload && payload.type) || 'never' %>;
+  export type RequestHeaders = <%~ (headers && headers.type) || '{}' %>;
+  export type ResponseBody = <%~ route.response.type %>;
+}

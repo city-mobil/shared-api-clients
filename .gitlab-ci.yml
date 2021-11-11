@@ -1,0 +1,69 @@
+stages:
+  - init
+  - build
+  - version_up
+
+variables:
+  DOCKER_DRIVER: overlay2
+  DOCKER_HOST: tcp://docker:2375
+  DOCKER_TLS_CERTDIR: ""
+
+.base_build:
+  stage: build
+  image: docker:git
+  services:
+    - docker:20-dind
+  variables:
+    GIT_URL: https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}
+    SWAGGER_FILE: api.yaml
+  before_script:
+    - cd api/${SERVICE}
+    - cp ../../tools/xgenerate.js ./xgenerate.js
+  tags:
+    - docker
+
+.base_version_up:
+  stage: version_up
+  image: node:14
+  services:
+    - docker:20-dind
+  variables:
+    GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no -o StrictHostKeyChecking=no -i ~/.ssh/id_gitlab"
+  before_script:
+    - mkdir -pvm 0700 ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_gitlab
+    - chmod 0400 ~/.ssh/id_gitlab
+    - git config --global user.email $(git --no-pager show -s --format='%ae' HEAD)
+    - git config --global user.name $(git --no-pager show -s --format='%an' HEAD)
+    - export PUSH_REPO=$(echo "$CI_REPOSITORY_URL" | sed -e "s|.*@\(.*\)|git@\1|" -e "s|/|:/|" )
+    - git checkout master
+    - git remote set-url --push origin "${PUSH_REPO}"
+    - git pull
+    - cd api/${SERVICE}
+  script:
+    - npm version --no-git-tag-version patch
+    - git add package.json package-lock.json ${SWAGGER_FILE}
+    - PACKAGE_VERSION=$(cat package.json | grep version | head -1 | awk -F= "{ print $2 }" | sed 's/[version:,\",]//g' | tr -d '[[:space:]]')
+    - git commit -m "${SERVICE} ${PACKAGE_VERSION}"
+    - git push
+  tags:
+    - docker
+
+init:
+  stage: init
+  image: docker:git
+  services:
+    - docker:20-dind
+  variables:
+    GIT_URL: https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}
+    SWAGGER_FILE: api.yaml
+  script:
+    - cd api/${SERVICE}
+  only:
+    variables:
+      - $SERVICE
+  tags:
+    - docker
+
+include:
+  - local: 'api/api-client/ci.yml'

@@ -1,0 +1,7 @@
+<%
+
+const extra = '';
+
+%>
+
+<%~ includeFile('../node_modules/@company/shared/dist/templates/api.eta', { ...it, extra }) %>

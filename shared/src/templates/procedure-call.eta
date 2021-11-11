@@ -1,0 +1,135 @@
+<%
+const { utils, route, config } = it;
+const { response, requestBodyInfo, responseBodyInfo, raw, request, routeName } = route;
+const { _, getInlineParseContent, formatDescription, fmtToJSDocLine, getParseContent, parseSchema, getComponentByRef, classNameCase, require } = utils;
+const { parameters, path, method, payload, headers, query, formData, security, requestParams } = request;
+const { type, errorType, contentTypes } = response;
+const queryName = (query && query.name) || "query";
+const pathParams = _.values(parameters);
+const isFetchTemplate = config.httpClientType === config.constants.HTTP_CLIENT.FETCH;
+
+const getRouteDocs = () => {
+  const jsDocDescription = raw.description ?
+    ` * @description ${formatDescription(raw.description, true)}` :
+    fmtToJSDocLine('No description', { eol: false });
+  const jsDocLines = _.compact([
+    _.size(raw.tags) && ` * @tags ${raw.tags.join(", ")}`,
+    ` * @name ${classNameCase(routeName.usage)}`,
+    raw.summary && ` * @summary ${raw.summary}`,
+    ` * @request ${_.upperCase(request.method)}:${raw.route}`,
+    routeName.duplicate && ` * @originalName ${routeName.original}`,
+    routeName.duplicate && ` * @duplicate`,
+    request.security && ` * @secure`,
+    ...(config.generateResponses && raw.responsesTypes.length
+    ? raw.responsesTypes.map(
+        ({ type, status, description, isSuccess }) =>
+            ` * @response \`${status}\` \`${type}\` ${description}`,
+        )
+    : []),
+  ]).join("\n");
+
+  return {
+    description: jsDocDescription,
+    lines: jsDocLines,
+  }
+}
+
+const routeDocs = getRouteDocs()
+
+const serviceName = it.fileName.replace('.ts', '')
+
+const overrideConfigParam = {
+    name: "override",
+    optional: true,
+    type: "BaseHTTPClientConfigOverride",
+    defaultValue: "{}",
+}
+
+const headersList = ((headers && headers.type || '')
+                    .match(/\"[a-zA-Z-_]+\"/g) || [])
+                    .map((header) => `${serviceName}Headers.${_.snakeCase(header.replace(/\"/g, '')).toUpperCase()}`)
+                    .join(', ')
+
+const argToTmpl = ({ name, optional, type, defaultValue }) => `${name}${!defaultValue && optional ? '?' : ''}: ${type}${defaultValue ? ` = ${defaultValue}` : ''}`;
+
+const rawArgs = []
+
+if (pathParams.length > 0) {
+  rawArgs.push(...pathParams.map(item => ({
+      name: item.name,
+      type: 'string',
+      optional: false,
+    })))
+}
+
+const queryParams = query || payload
+
+if (queryParams) {
+  rawArgs.push({
+    name: 'params',
+    type: queryParams.type,
+    optional: queryParams.optional
+  })
+}
+
+rawArgs.push(overrideConfigParam)
+
+const wrapperArgs = _
+    .sortBy(rawArgs, [o => o.optional])
+    .map(argToTmpl)
+    .join(', ')
+
+// RequestParams["type"]
+const requestContentKind = {
+    "JSON": "ContentType.Json",
+    "URL_ENCODED": "ContentType.UrlEncoded",
+    "FORM_DATA": "ContentType.FormData",
+}
+// RequestParams["format"]
+const responseContentKind = {
+    "JSON": '"json"',
+    "IMAGE": '"blob"',
+    "FORM_DATA": isFetchTemplate ? '"formData"' : '"document"'
+}
+
+const bodyTmpl = _.get(payload, "name") || null;
+const queryTmpl = (query != null && queryName) || null;
+const bodyContentKindTmpl = requestContentKind[requestBodyInfo.contentKind] || null;
+const responseFormatTmpl = responseContentKind[responseBodyInfo.success && responseBodyInfo.success.schema && responseBodyInfo.success.schema.contentKind] || null;
+const securityTmpl = security ? 'true' : null;
+
+let routeNameRaw = route.routeName.usage
+const isNameCorrect = /[A-Z]+/.test(routeNameRaw)
+
+if (!isNameCorrect) {
+  // Разобьем урл по слешам
+  let tmp = route.raw.route.split('/')
+  // Уберем пустые строки
+  tmp = tmp.filter(Boolean)
+  // преобразуем в PascalCase
+  tmp = tmp.map(item => _.upperFirst(_.camelCase(item)))
+  // соберем обратно в строку
+  tmp = tmp.join('')
+
+  routeNameRaw = tmp
+}
+
+const routeNameFinal = _.camelCase(classNameCase(routeNameRaw))
+
+%>
+/**
+<%~ routeDocs.description %>
+
+ * <% /* Here you can add some other JSDoc tags */ %>
+
+<%~ routeDocs.lines %>
+
+ */
+<%~ routeNameFinal %> = (<%~ wrapperArgs %>): Promise<<%~ type %>> =>
+  this.request<<%~ type %>, <%~ errorType %>>({
+    path: `<%~ path %>`,
+    method: '<%~ _.upperCase(method) %>',
+    params<%~ queryParams ? '' : ': {}' %>,
+    headersList: [<%~ headersList %>],
+    override,
+  })

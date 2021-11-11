@@ -1,0 +1,46 @@
+# Получаем swagger файл из репозитория
+api-client_build_from_repo:
+  extends: .base_build
+  variables:
+    GIT_PROJECT: api-client
+  script:
+    - git clone ${GIT_URL}/company/${GIT_PROJECT}.git
+    - cp ${GIT_PROJECT}/api/api.yaml ./${SWAGGER_FILE}
+    - rm -rf ${GIT_PROJECT}
+    - >
+      docker build
+      --build-arg NPM_AUTH_TOKEN=$NPM_AUTH_TOKEN
+      --build-arg SERVICE=${SERVICE}
+      --build-arg SWAGGER_FILE=${SWAGGER_FILE}
+      -f ../../.docker/fromRepo.Dockerfile .
+  only:
+    variables:
+      - $SERVICE == "api-client" && $SERVICE_REF_SLUG == "master"
+
+# Получаем swagger файл из урла
+api-client_build_from_url:
+  extends: .base_build
+  variables:
+    SERVICE: api-client
+    SWAGGER_FILE: api.json
+    DOCS_URL: https://company.ru/api/api.json
+  script:
+    - >
+      docker build
+      --build-arg NPM_AUTH_TOKEN=$NPM_AUTH_TOKEN
+      --build-arg SERVICE=${SERVICE}
+      --build-arg SWAGGER_FILE=${SWAGGER_FILE}
+      --build-arg DOCS_USER=${CLIENTAPI_USER}
+      --build-arg DOCS_PASS=${CLIENTAPI_PASS}
+      --build-arg DOCS_URL=${DOCS_URL}
+      -f ../../.docker/fromUrl.Dockerfile .
+  only:
+    variables:
+      - $SERVICE == "api-client" && $SERVICE_REF_SLUG == "master"
+
+# Поднимаем версию апи клиента
+api-client_version_up:
+  extends: .base_version_up
+  only:
+    variables:
+      - $SERVICE == "api-client" && $SERVICE_REF_SLUG == "master"

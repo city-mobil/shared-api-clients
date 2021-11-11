@@ -1,0 +1,1 @@
+<%~ includeFile('../node_modules/@company/shared/dist/templates/route-type.eta', it) %>
